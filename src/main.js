@@ -3,6 +3,7 @@ import './style.css';
 const DATASET_URL = 'https://api.energidataservice.dk/dataset/DayAheadPrices';
 const AREAS = ['DK1', 'DK2'];
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const VAT_MULTIPLIER = 1.25;
 const AREA_LABELS = {
   DK1: 'Vest',
   DK2: 'Øst',
@@ -53,7 +54,7 @@ app.innerHTML = `
       <article class="card summary-card">
         <p class="label">Dagens gennemsnit</p>
         <p class="value" id="average-price">-</p>
-        <p class="hint" id="average-window">Beregnet for valgt område</p>
+        <p class="hint" id="average-window">Inkl. moms, ekskl. transport og afgifter</p>
       </article>
     </section>
 
@@ -168,8 +169,8 @@ async function fetchDayAheadPrices() {
     area: record.PriceArea,
     startsAt: new Date(`${record.TimeUTC}Z`),
     localStartsAt: record.TimeDK,
-    priceDkkPerMwh: record.DayAheadPriceDKK,
-    priceDkkPerKwh: record.DayAheadPriceDKK / 1000,
+    priceDkkPerMwh: record.DayAheadPriceDKK * VAT_MULTIPLIER,
+    priceDkkPerKwh: (record.DayAheadPriceDKK * VAT_MULTIPLIER) / 1000,
   }));
 
   return aggregateToHourly(quarterHourRecords);
