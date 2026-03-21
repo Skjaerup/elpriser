@@ -16,10 +16,10 @@ app.innerHTML = `
     <section class="top-panel card">
       <div class="top-panel-main">
         <p class="eyebrow">Energi Data Service</p>
-        <h1>Elpriser i Danmark</h1>
-        <p class="hero-copy">
-          Elpriser for <strong>Vest</strong> og <strong>Øst</strong>.
-        </p>
+        <h1>
+          Elpriser i Danmark
+          <span class="title-inline-note">Vest og Øst</span>
+        </h1>
       </div>
       <div class="top-panel-actions">
         <div class="top-panel-controls">
@@ -35,26 +35,32 @@ app.innerHTML = `
           <button class="refresh-button" id="refresh-button" type="button">
             Opdater data
           </button>
+          <p class="meta top-status" id="status-text">Henter elpriser...</p>
         </div>
-        <p class="meta top-status" id="status-text">Henter elpriser...</p>
       </div>
     </section>
 
     <section class="summary-grid">
       <article class="card summary-card">
-        <p class="label">Pris lige nu</p>
+        <div class="summary-meta">
+          <p class="label">Pris lige nu</p>
+          <p class="hint" id="current-window">-</p>
+        </div>
         <p class="value" id="current-price">-</p>
-        <p class="hint" id="current-window">-</p>
       </article>
       <article class="card summary-card">
-        <p class="label">Næste interval</p>
+        <div class="summary-meta">
+          <p class="label">Næste interval</p>
+          <p class="hint" id="next-window">-</p>
+        </div>
         <p class="value" id="next-price">-</p>
-        <p class="hint" id="next-window">-</p>
       </article>
       <article class="card summary-card">
-        <p class="label">Dagens gennemsnit</p>
+        <div class="summary-meta">
+          <p class="label">Dagens gennemsnit</p>
+          <p class="hint" id="average-window">Inkl. moms, ekskl. transport og afgifter</p>
+        </div>
         <p class="value" id="average-price">-</p>
-        <p class="hint" id="average-window">Inkl. moms, ekskl. transport og afgifter</p>
       </article>
     </section>
 

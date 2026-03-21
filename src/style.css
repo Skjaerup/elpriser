@@ -51,20 +51,20 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  align-items: flex-end;
-  padding: 1rem 1.25rem;
-  margin-bottom: 0.75rem;
+  align-items: center;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 0.6rem;
 }
 
 .top-panel-main {
   flex: 1;
+  min-width: 0;
 }
 
 .top-panel-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .top-panel-controls {
@@ -90,21 +90,25 @@ p {
 }
 
 h1 {
-  margin-bottom: 0.25rem;
-  font-size: clamp(1.8rem, 3vw, 2.7rem);
+  margin-bottom: 0;
+  font-size: clamp(1.45rem, 2.3vw, 2.15rem);
+  line-height: 1.15;
 }
 
-.hero-copy {
-  margin-bottom: 0;
-  max-width: 42ch;
+.title-inline-note {
+  display: inline-block;
+  margin-left: 0.35rem;
   color: #cbd5e1;
-  font-size: 0.95rem;
+  font-size: 0.62em;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .top-status {
   margin-bottom: 0;
   text-align: right;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
+  white-space: nowrap;
 }
 
 .refresh-button,
@@ -171,8 +175,16 @@ h1 {
   padding: 0.95rem 1rem;
 }
 
+.summary-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
 .label {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
   color: #93c5fd;
   font-size: 0.84rem;
 }
@@ -185,6 +197,8 @@ h1 {
 
 .hint {
   font-size: 0.82rem;
+  margin-bottom: 0;
+  text-align: right;
 }
 
 .table-card {
@@ -196,7 +210,7 @@ h1 {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-end;
-  margin-bottom: 1rem;
+  margin-bottom: 0.45rem;
 }
 
 .chart-wrap {
@@ -211,7 +225,7 @@ h1 {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.55rem;
   color: #cbd5e1;
   font-size: 0.95rem;
 }
@@ -362,7 +376,7 @@ h1 {
 
   .top-panel-actions {
     width: 100%;
-    align-items: stretch;
+    justify-content: flex-start;
   }
 
   .top-panel-controls {
@@ -371,6 +385,7 @@ h1 {
 
   .top-status {
     text-align: left;
+    white-space: normal;
   }
 
   .summary-grid {
