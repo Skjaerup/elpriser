@@ -1,6 +1,6 @@
 import './style.css';
 
-const DATASET_URL = '/api/dataset/DayAheadPrices';
+const DATASET_URL = 'https://api.energidataservice.dk/dataset/DayAheadPrices';
 const AREAS = ['DK1', 'DK2'];
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const VAT_MULTIPLIER = 1.25;
