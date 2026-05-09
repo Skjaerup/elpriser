@@ -1,6 +1,6 @@
 import './style.css';
 
-const DATASET_URL = 'https://api.energidataservice.dk/dataset/DayAheadPrices';
+const DATASET_URL = '/api/dataset/DayAheadPrices';
 const AREAS = ['DK1', 'DK2'];
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const VAT_MULTIPLIER = 1.25;
@@ -159,7 +159,13 @@ async function fetchDayAheadPrices() {
     filter: JSON.stringify({ PriceArea: AREAS }),
   });
 
-  const response = await fetch(`${DATASET_URL}?${params.toString()}`);
+  let response;
+
+  try {
+    response = await fetch(`${DATASET_URL}?${params.toString()}`);
+  } catch {
+    throw new Error('Netvaerksfejl ved hentning af elpriser. Tjek forbindelsen eller proev igen fra Vite dev-serveren.');
+  }
 
   if (!response.ok) {
     throw new Error(`API-kald fejlede med status ${response.status}.`);
