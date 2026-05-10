@@ -46,22 +46,22 @@ app.innerHTML = `
     <section class="summary-grid">
       <article class="card summary-card">
         <div class="summary-meta">
-          <p class="label" id="current-label">Pris lige nu</p>
+          <p class="label" id="current-label">Pris nu</p>
           <p class="hint" id="current-window">-</p>
         </div>
         <p class="value" id="current-price">-</p>
       </article>
       <article class="card summary-card">
         <div class="summary-meta">
-          <p class="label" id="next-label">Næste interval</p>
+          <p class="label" id="next-label">Næste</p>
           <p class="hint" id="next-window">-</p>
         </div>
         <p class="value" id="next-price">-</p>
       </article>
       <article class="card summary-card">
         <div class="summary-meta">
-          <p class="label" id="average-label">Dagens gennemsnit</p>
-          <p class="hint" id="average-window">Inkl. moms, ekskl. transport og afgifter</p>
+          <p class="label" id="average-label">Snit i dag</p>
+          <p class="hint" id="average-window">Inkl. moms</p>
         </div>
         <p class="value" id="average-price">-</p>
       </article>
@@ -84,6 +84,7 @@ const state = {
   area: 'DK1',
   dataByArea: new Map(),
   displayedDay: null,
+  apiNextFetchAt: null,
   nextAutoRefreshAt: null,
   autoRefreshTimerId: null,
 };
@@ -131,7 +132,7 @@ async function loadPrices() {
   setLoadingState(true);
 
   try {
-    const { records, displayedDay } = await fetchDayAheadPrices();
+    const { records, displayedDay, apiNextFetchAt } = await fetchDayAheadPrices();
     const grouped = groupByArea(records);
 
     for (const area of AREAS) {
@@ -142,6 +143,7 @@ async function loadPrices() {
 
     state.dataByArea = grouped;
     state.displayedDay = displayedDay;
+    state.apiNextFetchAt = apiNextFetchAt;
     scheduleAutoRefresh(displayedDay);
     render();
     elements.statusText.textContent = getStatusText({
@@ -184,6 +186,7 @@ async function fetchDayAheadPrices() {
   return {
     records: aggregateToHourly(quarterHourRecords),
     displayedDay: getRecordDateKey(quarterHourRecords[0].startsAt),
+    apiNextFetchAt: payload.apiNextFetchAt,
   };
 }
 
@@ -208,7 +211,12 @@ async function requestDayAheadPrices(range) {
     throw new Error(`API-kald fejlede med status ${response.status}.`);
   }
 
-  return response.json();
+  const payload = await response.json();
+
+  return {
+    ...payload,
+    apiNextFetchAt: response.headers.get('X-API-Next-Fetch-At'),
+  };
 }
 
 function groupByArea(records) {
@@ -290,9 +298,9 @@ function render() {
     selectedRecords.length;
   const dayCopy = getDisplayedDayCopy(state.displayedDay);
 
-  elements.currentLabel.textContent = isCurrentDay ? 'Pris lige nu' : 'Første interval';
-  elements.nextLabel.textContent = isCurrentDay ? 'Næste interval' : 'Andet interval';
-  elements.averageLabel.textContent = `${dayCopy.averagePrefix} gennemsnit`;
+  elements.currentLabel.textContent = isCurrentDay ? 'Pris nu' : 'Første';
+  elements.nextLabel.textContent = isCurrentDay ? 'Næste' : 'Andet';
+  elements.averageLabel.textContent = dayCopy.averageLabel;
   elements.tableHeading.textContent = `${dayCopy.heading} prisoversigt`;
   elements.currentPrice.textContent = formatPrice(currentRecord.priceDkkPerKwh);
   elements.currentWindow.textContent = formatWindow(currentRecord.startsAt);
@@ -305,9 +313,9 @@ function render() {
 function renderError(message) {
   const nextCheckText = getNextRefreshText('Nyt automatisk tjek');
   elements.statusText.textContent = nextCheckText ? `${message}. ${nextCheckText}` : message;
-  elements.currentLabel.textContent = 'Pris lige nu';
-  elements.nextLabel.textContent = 'Næste interval';
-  elements.averageLabel.textContent = 'Dagens gennemsnit';
+  elements.currentLabel.textContent = 'Pris nu';
+  elements.nextLabel.textContent = 'Næste';
+  elements.averageLabel.textContent = 'Snit i dag';
   elements.tableHeading.textContent = 'Dagens prisoversigt';
   elements.currentPrice.textContent = '-';
   elements.currentWindow.textContent = '-';
@@ -379,12 +387,12 @@ function renderChart(records, currentRecord, isCurrentDay) {
   const height = isWideShortTablet ? 220 : viewportWidth <= 560 ? 240 : viewportWidth <= 900 ? 260 : 280;
   const padding =
     isWideShortTablet
-      ? { top: 18, right: 20, bottom: 40, left: 62 }
+      ? { top: 18, right: 20, bottom: 24, left: 62 }
       : viewportWidth <= 560
-      ? { top: 24, right: 16, bottom: 44, left: 56 }
+      ? { top: 24, right: 16, bottom: 26, left: 56 }
       : viewportWidth <= 900
-        ? { top: 24, right: 20, bottom: 50, left: 64 }
-      : { top: 24, right: 24, bottom: 56, left: 72 };
+        ? { top: 24, right: 20, bottom: 30, left: 64 }
+      : { top: 24, right: 24, bottom: 32, left: 72 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
   const maxPrice = Math.max(...records.map((record) => record.priceDkkPerKwh), 0.01);
@@ -413,11 +421,13 @@ function renderChart(records, currentRecord, isCurrentDay) {
   const labels = points
     .filter((_, index) => index === 0 || index === points.length - 1 || index % labelStep === 0)
     .map(
-      (point) => `
-        <div class="chart-label" style="left:${((point.x - padding.left) / innerWidth) * 100}%">
+      (point) => {
+        return `
+        <div class="chart-label" style="left:${(point.x / width) * 100}%">
           ${formatHour(point.record.startsAt)}
         </div>
-      `,
+      `;
+      },
     )
     .join('');
 
@@ -492,7 +502,6 @@ function formatHour(date) {
   return new Intl.DateTimeFormat('da-DK', {
     timeZone: 'Europe/Copenhagen',
     hour: '2-digit',
-    minute: '2-digit',
   }).format(date);
 }
 
@@ -599,28 +608,30 @@ function getRecordDateKey(date) {
 
 function getDisplayedDaySummary(dayKey) {
   const copy = getDisplayedDayCopy(dayKey);
-  return `Viser priser for ${copy.summary}`;
+  return copy.summary === 'i dag' || copy.summary === 'i morgen'
+    ? capitalizeFirstLetter(copy.summary)
+    : copy.summary;
 }
 
 function getStatusText({ displayedDay, updatedAt }) {
   const parts = [
     getDisplayedDaySummary(displayedDay),
-    `Senest opdateret ${formatTimestamp(updatedAt)}`,
+    `Opd. ${formatCompactTimestamp(updatedAt)}`,
   ];
-  const nextCheckText = getNextRefreshText('Næste automatiske tjek');
+  const nextCheckText = getApiNextFetchText();
 
   if (nextCheckText) {
     parts.push(nextCheckText);
   }
 
-  return parts.join('. ');
+  return parts.join(' | ');
 }
 
 function getDisplayedDayCopy(dayKey) {
   if (!dayKey) {
     return {
       heading: 'Dagens',
-      averagePrefix: 'Dagens',
+      averageLabel: 'Snit i dag',
       summary: 'i dag',
     };
   }
@@ -631,7 +642,7 @@ function getDisplayedDayCopy(dayKey) {
   if (dayKey === todayKey) {
     return {
       heading: 'Dagens',
-      averagePrefix: 'Dagens',
+      averageLabel: 'Snit i dag',
       summary: 'i dag',
     };
   }
@@ -639,14 +650,14 @@ function getDisplayedDayCopy(dayKey) {
   if (dayKey === tomorrowKey) {
     return {
       heading: 'Morgendagens',
-      averagePrefix: 'Morgendagens',
+      averageLabel: 'Snit i morgen',
       summary: 'i morgen',
     };
   }
 
   return {
     heading: 'Valgte dags',
-    averagePrefix: 'Dagens',
+    averageLabel: 'Snit',
     summary: formatDayLabel(dayKey),
   };
 }
@@ -661,7 +672,39 @@ function getNextRefreshText(prefix) {
     return '';
   }
 
-  return `${prefix} ${formatTimestamp(state.nextAutoRefreshAt)}`;
+  return `${prefix} ${formatCompactTimestamp(state.nextAutoRefreshAt)}`;
+}
+
+function getApiNextFetchText() {
+  if (!state.apiNextFetchAt) {
+    return getNextRefreshText('Naeste');
+  }
+
+  return `API nyt ${formatCompactTimestamp(new Date(state.apiNextFetchAt))}`;
+}
+
+function formatCompactTimestamp(date) {
+  const sameDay = getRecordDateKey(date) === getRecordDateKey(new Date());
+
+  if (sameDay) {
+    return new Intl.DateTimeFormat('da-DK', {
+      timeZone: COPENHAGEN_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat('da-DK', {
+    timeZone: COPENHAGEN_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date).replace(',', '');
+}
+
+function capitalizeFirstLetter(value) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function getNextReleaseDate(date) {

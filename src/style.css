@@ -167,42 +167,73 @@ h1 {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.6rem;
-  margin-bottom: 0.6rem;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .summary-card {
-  padding: 0.95rem 1rem;
+  padding: 0.72rem 0.82rem;
 }
 
 .summary-meta {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin-bottom: 0.2rem;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-bottom: 0.08rem;
 }
 
 .label {
   margin-bottom: 0;
   color: #93c5fd;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
 }
 
 .value {
-  margin-bottom: 0.15rem;
-  font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+  margin-bottom: 0;
+  font-size: clamp(1.05rem, 1.9vw, 1.55rem);
+  line-height: 1.05;
   font-weight: 800;
 }
 
 .hint {
-  font-size: 0.82rem;
+  font-size: 0.74rem;
+  line-height: 1.1;
   margin-bottom: 0;
   text-align: right;
 }
 
+@media (max-width: 1100px) {
+  .summary-grid {
+    gap: 0.4rem;
+  }
+
+  .summary-card {
+    padding: 0.62rem 0.72rem;
+  }
+
+  .label {
+    font-size: 0.72rem;
+  }
+
+  .value {
+    font-size: clamp(0.98rem, 1.8vw, 1.35rem);
+  }
+
+  .hint {
+    font-size: 0.68rem;
+    max-width: 8.5rem;
+  }
+}
+
 .table-card {
-  padding: 1.5rem;
+  padding: 1rem 1.1rem 0.85rem;
+}
+
+.table-card h2 {
+  margin-bottom: 0;
+  font-size: clamp(1.1rem, 1.8vw, 1.45rem);
+  line-height: 1.1;
 }
 
 .table-header {
@@ -210,7 +241,7 @@ h1 {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-end;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.2rem;
 }
 
 .chart-wrap {
@@ -224,10 +255,25 @@ h1 {
 .chart-metrics {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.55rem;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
   color: #cbd5e1;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 1100px) {
+  .table-card {
+    padding: 0.85rem 0.95rem 0.75rem;
+  }
+
+  .table-card h2 {
+    font-size: clamp(1rem, 1.7vw, 1.25rem);
+  }
+
+  .chart-metrics {
+    font-size: 0.76rem;
+    margin-bottom: 0.18rem;
+  }
 }
 
 .price-chart {
@@ -283,8 +329,8 @@ h1 {
 
 .chart-labels {
   position: relative;
-  height: 1.75rem;
-  margin-top: 0.5rem;
+  height: 0.8rem;
+  margin-top: -0.95rem;
 }
 
 .chart-label {
@@ -292,6 +338,7 @@ h1 {
   transform: translateX(-50%);
   color: #93c5fd;
   font-size: 0.82rem;
+  line-height: 1;
   white-space: nowrap;
 }
 
