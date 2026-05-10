@@ -5,8 +5,8 @@ const AREAS = ['DK1', 'DK2'];
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const VAT_MULTIPLIER = 1.25;
 const COPENHAGEN_TIME_ZONE = 'Europe/Copenhagen';
-const REFRESH_HOUR = 14;
-const REFRESH_MINUTE = 5;
+const NEXT_DAY_REFRESH_HOUR = 0;
+const NEXT_DAY_REFRESH_MINUTE = 5;
 const AREA_LABELS = {
   DK1: 'Vest',
   DK2: 'Øst',
@@ -160,12 +160,7 @@ async function loadPrices() {
 }
 
 async function fetchDayAheadPrices() {
-  const preferredRange = getPreferredDateRange(new Date());
-  let payload = await requestDayAheadPrices(preferredRange);
-
-  if ((!payload.records || payload.records.length === 0) && preferredRange.dayOffset === 1) {
-    payload = await requestDayAheadPrices(getPreferredDateRange(new Date(), 0));
-  }
+  const payload = await requestDayAheadPrices(getCurrentDateRange(new Date()));
 
   if (!payload.records || !Array.isArray(payload.records)) {
     throw new Error('API-svaret havde ikke det forventede format.');
@@ -518,15 +513,9 @@ function addDays(date, days) {
 function scheduleAutoRefresh(displayedDay) {
   const now = new Date();
   const todayKey = getRecordDateKey(now);
-  const tomorrowKey = getRecordDateKey(addDays(now, 1));
 
-  if (displayedDay === tomorrowKey) {
-    setNextAutoRefreshAt(getNextReleaseDate(now));
-    return;
-  }
-
-  if (displayedDay === todayKey && !isPastRefreshThreshold(getCopenhagenParts(now))) {
-    setNextAutoRefreshAt(getNextReleaseDate(now));
+  if (displayedDay === todayKey) {
+    setNextAutoRefreshAt(getNextDayRefreshDate(now));
     return;
   }
 
@@ -560,20 +549,14 @@ function shouldRefreshNow() {
   return !state.nextAutoRefreshAt || Date.now() >= state.nextAutoRefreshAt.getTime();
 }
 
-function getPreferredDateRange(date, forcedDayOffset = null) {
-  const dayOffset = forcedDayOffset ?? (isPastRefreshThreshold(getCopenhagenParts(date)) ? 1 : 0);
-  const startDate = addDays(date, dayOffset);
+function getCurrentDateRange(date) {
+  const startDate = date;
   const endDate = addDays(startDate, 1);
 
   return {
-    dayOffset,
     start: formatApiDate(startDate),
     end: formatApiDate(endDate),
   };
-}
-
-function isPastRefreshThreshold(parts) {
-  return parts.hour > REFRESH_HOUR || (parts.hour === REFRESH_HOUR && parts.minute >= REFRESH_MINUTE);
 }
 
 function getCopenhagenParts(date) {
@@ -646,15 +629,6 @@ function getDisplayedDayCopy(dayKey) {
       summary: 'i dag',
     };
   }
-
-  if (dayKey === tomorrowKey) {
-    return {
-      heading: 'Morgendagens',
-      averageLabel: 'Snit i morgen',
-      summary: 'i morgen',
-    };
-  }
-
   return {
     heading: 'Valgte dags',
     averageLabel: 'Snit',
@@ -707,22 +681,21 @@ function capitalizeFirstLetter(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function getNextReleaseDate(date) {
-  const parts = getCopenhagenParts(date);
-  const nextReleaseLocalDay = isPastRefreshThreshold(parts) ? addDays(date, 1) : date;
-  const releaseParts = getCopenhagenParts(nextReleaseLocalDay);
-  const releaseUtcGuess = new Date(Date.UTC(
-    Number(releaseParts.year),
-    Number(releaseParts.month) - 1,
-    Number(releaseParts.day),
-    REFRESH_HOUR,
-    REFRESH_MINUTE,
+function getNextDayRefreshDate(date) {
+  const nextLocalDay = addDays(date, 1);
+  const refreshParts = getCopenhagenParts(nextLocalDay);
+  const refreshUtcGuess = new Date(Date.UTC(
+    Number(refreshParts.year),
+    Number(refreshParts.month) - 1,
+    Number(refreshParts.day),
+    NEXT_DAY_REFRESH_HOUR,
+    NEXT_DAY_REFRESH_MINUTE,
     0,
     0,
   ));
-  const correctedOffsetMinutes = getTimeZoneOffsetMinutes(releaseUtcGuess, COPENHAGEN_TIME_ZONE);
+  const correctedOffsetMinutes = getTimeZoneOffsetMinutes(refreshUtcGuess, COPENHAGEN_TIME_ZONE);
 
-  return new Date(releaseUtcGuess.getTime() - correctedOffsetMinutes * 60 * 1000);
+  return new Date(refreshUtcGuess.getTime() - correctedOffsetMinutes * 60 * 1000);
 }
 
 function getTimeZoneOffsetMinutes(date, timeZone) {

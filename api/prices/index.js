@@ -5,15 +5,15 @@ const CACHE_HEADERS = {
   'Cache-Control': 'public, max-age=300, stale-while-revalidate=60',
 };
 const COPENHAGEN_TIME_ZONE = 'Europe/Copenhagen';
-const REFRESH_HOUR = 14;
-const REFRESH_MINUTE = 5;
+const NEXT_DAY_REFRESH_HOUR = 0;
+const NEXT_DAY_REFRESH_MINUTE = 5;
 
 let cachedResponse = null;
 
 module.exports = async function prices(context, req) {
   const upstreamUrl = buildUpstreamUrl(req);
   const cacheWindow = getCacheWindowKey(new Date());
-  const nextFetchAt = getNextReleaseDate(new Date()).toISOString();
+  const nextFetchAt = getNextDayRefreshDate(new Date()).toISOString();
 
   if (cachedResponse && cachedResponse.upstreamUrl === upstreamUrl && cachedResponse.cacheWindow === cacheWindow) {
     context.res = {
@@ -100,7 +100,7 @@ function buildUpstreamUrl(req) {
   const query = new URLSearchParams(req.query || {});
 
   if (!query.has('start') || !query.has('end')) {
-    const requestedRange = getPreferredDateRange(new Date());
+    const requestedRange = getCurrentDateRange(new Date());
 
     query.set('start', requestedRange.start);
     query.set('end', requestedRange.end);
@@ -123,24 +123,18 @@ function buildUpstreamUrl(req) {
 
 function getCacheWindowKey(date) {
   const parts = getCopenhagenParts(date);
-  const bucket = isPastRefreshThreshold(parts) ? 'after-release' : 'before-release';
 
-  return `${parts.year}-${parts.month}-${parts.day}-${bucket}`;
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function getPreferredDateRange(date) {
-  const dayOffset = isPastRefreshThreshold(getCopenhagenParts(date)) ? 1 : 0;
-  const startDate = addDays(date, dayOffset);
+function getCurrentDateRange(date) {
+  const startDate = date;
   const endDate = addDays(startDate, 1);
 
   return {
     start: formatApiDate(startDate),
     end: formatApiDate(endDate),
   };
-}
-
-function isPastRefreshThreshold(parts) {
-  return parts.hour > REFRESH_HOUR || (parts.hour === REFRESH_HOUR && parts.minute >= REFRESH_MINUTE);
 }
 
 function getCopenhagenParts(date) {
@@ -183,22 +177,21 @@ function addDays(date, days) {
   return clone;
 }
 
-function getNextReleaseDate(date) {
-  const parts = getCopenhagenParts(date);
-  const nextReleaseLocalDay = isPastRefreshThreshold(parts) ? addDays(date, 1) : date;
-  const releaseParts = getCopenhagenParts(nextReleaseLocalDay);
-  const releaseUtcGuess = new Date(Date.UTC(
-    Number(releaseParts.year),
-    Number(releaseParts.month) - 1,
-    Number(releaseParts.day),
-    REFRESH_HOUR,
-    REFRESH_MINUTE,
+function getNextDayRefreshDate(date) {
+  const nextLocalDay = addDays(date, 1);
+  const refreshParts = getCopenhagenParts(nextLocalDay);
+  const refreshUtcGuess = new Date(Date.UTC(
+    Number(refreshParts.year),
+    Number(refreshParts.month) - 1,
+    Number(refreshParts.day),
+    NEXT_DAY_REFRESH_HOUR,
+    NEXT_DAY_REFRESH_MINUTE,
     0,
     0,
   ));
-  const correctedOffsetMinutes = getTimeZoneOffsetMinutes(releaseUtcGuess, COPENHAGEN_TIME_ZONE);
+  const correctedOffsetMinutes = getTimeZoneOffsetMinutes(refreshUtcGuess, COPENHAGEN_TIME_ZONE);
 
-  return new Date(releaseUtcGuess.getTime() - correctedOffsetMinutes * 60 * 1000);
+  return new Date(refreshUtcGuess.getTime() - correctedOffsetMinutes * 60 * 1000);
 }
 
 function getTimeZoneOffsetMinutes(date, timeZone) {
