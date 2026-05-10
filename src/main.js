@@ -1,12 +1,12 @@
 import './style.css';
 
-const DATASET_URL =
-  window.location.hostname === 'localhost'
-    ? '/api/dataset/DayAheadPrices'
-    : 'https://api.energidataservice.dk/dataset/DayAheadPrices';
+const DATASET_URL = '/api/prices';
 const AREAS = ['DK1', 'DK2'];
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const VAT_MULTIPLIER = 1.25;
+const COPENHAGEN_TIME_ZONE = 'Europe/Copenhagen';
+const REFRESH_HOUR = 14;
+const REFRESH_MINUTE = 5;
 const AREA_LABELS = {
   DK1: 'Vest',
   DK2: 'Øst',
@@ -46,21 +46,21 @@ app.innerHTML = `
     <section class="summary-grid">
       <article class="card summary-card">
         <div class="summary-meta">
-          <p class="label">Pris lige nu</p>
+          <p class="label" id="current-label">Pris lige nu</p>
           <p class="hint" id="current-window">-</p>
         </div>
         <p class="value" id="current-price">-</p>
       </article>
       <article class="card summary-card">
         <div class="summary-meta">
-          <p class="label">Næste interval</p>
+          <p class="label" id="next-label">Næste interval</p>
           <p class="hint" id="next-window">-</p>
         </div>
         <p class="value" id="next-price">-</p>
       </article>
       <article class="card summary-card">
         <div class="summary-meta">
-          <p class="label">Dagens gennemsnit</p>
+          <p class="label" id="average-label">Dagens gennemsnit</p>
           <p class="hint" id="average-window">Inkl. moms, ekskl. transport og afgifter</p>
         </div>
         <p class="value" id="average-price">-</p>
@@ -69,7 +69,7 @@ app.innerHTML = `
 
     <section class="card table-card">
       <div class="table-header">
-        <h2>Dagens prisoversigt</h2>
+        <h2 id="table-heading">Dagens prisoversigt</h2>
       </div>
       <div class="chart-wrap">
         <div class="chart-shell" id="prices-chart">
@@ -83,18 +83,25 @@ app.innerHTML = `
 const state = {
   area: 'DK1',
   dataByArea: new Map(),
+  displayedDay: null,
+  nextAutoRefreshAt: null,
+  autoRefreshTimerId: null,
 };
 
 const elements = {
   refreshButton: document.querySelector('#refresh-button'),
   statusText: document.querySelector('#status-text'),
   currentPrice: document.querySelector('#current-price'),
+  currentLabel: document.querySelector('#current-label'),
   currentWindow: document.querySelector('#current-window'),
   nextPrice: document.querySelector('#next-price'),
+  nextLabel: document.querySelector('#next-label'),
   nextWindow: document.querySelector('#next-window'),
   averagePrice: document.querySelector('#average-price'),
+  averageLabel: document.querySelector('#average-label'),
   averageWindow: document.querySelector('#average-window'),
   pricesChart: document.querySelector('#prices-chart'),
+  tableHeading: document.querySelector('#table-heading'),
   areaButtons: AREAS.reduce((buttons, area) => {
     buttons[area] = document.querySelector(`#area-${area}`);
     return buttons;
@@ -112,14 +119,8 @@ elements.refreshButton.addEventListener('click', () => {
   void loadPrices();
 });
 
-window.setInterval(() => {
-  if (!document.hidden) {
-    void loadPrices();
-  }
-}, AUTO_REFRESH_INTERVAL_MS);
-
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
+  if (!document.hidden && shouldRefreshNow()) {
     void loadPrices();
   }
 });
@@ -130,7 +131,7 @@ async function loadPrices() {
   setLoadingState(true);
 
   try {
-    const records = await fetchDayAheadPrices();
+    const { records, displayedDay } = await fetchDayAheadPrices();
     const grouped = groupByArea(records);
 
     for (const area of AREAS) {
@@ -140,10 +141,16 @@ async function loadPrices() {
     }
 
     state.dataByArea = grouped;
+    state.displayedDay = displayedDay;
+    scheduleAutoRefresh(displayedDay);
     render();
-    elements.statusText.textContent = `Senest opdateret ${formatTimestamp(new Date())}`;
+    elements.statusText.textContent = getStatusText({
+      displayedDay,
+      updatedAt: new Date(),
+    });
   } catch (error) {
     console.error(error);
+    scheduleRetryRefresh();
     renderError(error instanceof Error ? error.message : 'Ukendt fejl ved hentning af elpriser.');
   } finally {
     setLoadingState(false);
@@ -151,12 +158,39 @@ async function loadPrices() {
 }
 
 async function fetchDayAheadPrices() {
-  const today = new Date();
-  const tomorrow = addDays(today, 1);
+  const preferredRange = getPreferredDateRange(new Date());
+  let payload = await requestDayAheadPrices(preferredRange);
 
+  if ((!payload.records || payload.records.length === 0) && preferredRange.dayOffset === 1) {
+    payload = await requestDayAheadPrices(getPreferredDateRange(new Date(), 0));
+  }
+
+  if (!payload.records || !Array.isArray(payload.records)) {
+    throw new Error('API-svaret havde ikke det forventede format.');
+  }
+
+  if (payload.records.length === 0) {
+    throw new Error('Der er endnu ikke offentliggjort elpriser for den valgte dag.');
+  }
+
+  const quarterHourRecords = payload.records.map((record) => ({
+    area: record.PriceArea,
+    startsAt: new Date(`${record.TimeUTC}Z`),
+    localStartsAt: record.TimeDK,
+    priceDkkPerMwh: record.DayAheadPriceDKK * VAT_MULTIPLIER,
+    priceDkkPerKwh: (record.DayAheadPriceDKK * VAT_MULTIPLIER) / 1000,
+  }));
+
+  return {
+    records: aggregateToHourly(quarterHourRecords),
+    displayedDay: getRecordDateKey(quarterHourRecords[0].startsAt),
+  };
+}
+
+async function requestDayAheadPrices(range) {
   const params = new URLSearchParams({
-    start: formatApiDate(today),
-    end: formatApiDate(tomorrow),
+    start: range.start,
+    end: range.end,
     sort: 'TimeDK ASC',
     limit: '500',
     filter: JSON.stringify({ PriceArea: AREAS }),
@@ -174,21 +208,7 @@ async function fetchDayAheadPrices() {
     throw new Error(`API-kald fejlede med status ${response.status}.`);
   }
 
-  const payload = await response.json();
-
-  if (!payload.records || !Array.isArray(payload.records)) {
-    throw new Error('API-svaret havde ikke det forventede format.');
-  }
-
-  const quarterHourRecords = payload.records.map((record) => ({
-    area: record.PriceArea,
-    startsAt: new Date(`${record.TimeUTC}Z`),
-    localStartsAt: record.TimeDK,
-    priceDkkPerMwh: record.DayAheadPriceDKK * VAT_MULTIPLIER,
-    priceDkkPerKwh: (record.DayAheadPriceDKK * VAT_MULTIPLIER) / 1000,
-  }));
-
-  return aggregateToHourly(quarterHourRecords);
+  return response.json();
 }
 
 function groupByArea(records) {
@@ -261,22 +281,34 @@ function render() {
 
   const now = new Date();
   const currentIndex = findCurrentIndex(selectedRecords, now);
-  const currentRecord = currentIndex >= 0 ? selectedRecords[currentIndex] : selectedRecords[0];
-  const nextRecord = currentIndex >= 0 ? selectedRecords[currentIndex + 1] : selectedRecords[1];
+  const isCurrentDay = state.displayedDay === getRecordDateKey(now);
+  const primaryIndex = isCurrentDay && currentIndex >= 0 ? currentIndex : 0;
+  const currentRecord = selectedRecords[primaryIndex] ?? selectedRecords[0];
+  const nextRecord = selectedRecords[primaryIndex + 1];
   const averagePrice =
     selectedRecords.reduce((sum, record) => sum + record.priceDkkPerKwh, 0) /
     selectedRecords.length;
+  const dayCopy = getDisplayedDayCopy(state.displayedDay);
 
+  elements.currentLabel.textContent = isCurrentDay ? 'Pris lige nu' : 'Første interval';
+  elements.nextLabel.textContent = isCurrentDay ? 'Næste interval' : 'Andet interval';
+  elements.averageLabel.textContent = `${dayCopy.averagePrefix} gennemsnit`;
+  elements.tableHeading.textContent = `${dayCopy.heading} prisoversigt`;
   elements.currentPrice.textContent = formatPrice(currentRecord.priceDkkPerKwh);
   elements.currentWindow.textContent = formatWindow(currentRecord.startsAt);
   elements.nextPrice.textContent = nextRecord ? formatPrice(nextRecord.priceDkkPerKwh) : 'Ingen data';
   elements.nextWindow.textContent = nextRecord ? formatWindow(nextRecord.startsAt) : 'Ingen senere intervaller';
   elements.averagePrice.textContent = formatPrice(averagePrice);
-  elements.pricesChart.innerHTML = renderChart(selectedRecords, currentRecord);
+  elements.pricesChart.innerHTML = renderChart(selectedRecords, currentRecord, isCurrentDay);
 }
 
 function renderError(message) {
-  elements.statusText.textContent = message;
+  const nextCheckText = getNextRefreshText('Nyt automatisk tjek');
+  elements.statusText.textContent = nextCheckText ? `${message}. ${nextCheckText}` : message;
+  elements.currentLabel.textContent = 'Pris lige nu';
+  elements.nextLabel.textContent = 'Næste interval';
+  elements.averageLabel.textContent = 'Dagens gennemsnit';
+  elements.tableHeading.textContent = 'Dagens prisoversigt';
   elements.currentPrice.textContent = '-';
   elements.currentWindow.textContent = '-';
   elements.nextPrice.textContent = '-';
@@ -339,7 +371,7 @@ function formatPrice(price) {
   return `${price.toFixed(2).replace('.', ',')} kr/kWh`;
 }
 
-function renderChart(records, currentRecord) {
+function renderChart(records, currentRecord, isCurrentDay) {
   const viewportWidth = window.innerWidth || 1024;
   const viewportHeight = window.innerHeight || 800;
   const isWideShortTablet = viewportWidth >= 1200 && viewportHeight <= 820;
@@ -442,7 +474,7 @@ function renderChart(records, currentRecord) {
   return `
     <div class="chart-metrics">
       <span>Højeste: ${formatPrice(maxPrice)}</span>
-      <span>Aktuel: ${formatPrice(currentRecord.priceDkkPerKwh)}</span>
+      <span>${isCurrentDay ? 'Aktuel' : 'Første'}: ${formatPrice(currentRecord.priceDkkPerKwh)}</span>
     </div>
     <svg viewBox="0 0 ${width} ${height}" class="price-chart" role="img" aria-label="Graf over dagens elpriser fra venstre mod højre">
       ${yAxisMarkup}
@@ -472,4 +504,206 @@ function addDays(date, days) {
   const clone = new Date(date);
   clone.setDate(clone.getDate() + days);
   return clone;
+}
+
+function scheduleAutoRefresh(displayedDay) {
+  const now = new Date();
+  const todayKey = getRecordDateKey(now);
+  const tomorrowKey = getRecordDateKey(addDays(now, 1));
+
+  if (displayedDay === tomorrowKey) {
+    setNextAutoRefreshAt(getNextReleaseDate(now));
+    return;
+  }
+
+  if (displayedDay === todayKey && !isPastRefreshThreshold(getCopenhagenParts(now))) {
+    setNextAutoRefreshAt(getNextReleaseDate(now));
+    return;
+  }
+
+  setNextAutoRefreshAt(new Date(now.getTime() + AUTO_REFRESH_INTERVAL_MS));
+}
+
+function scheduleRetryRefresh() {
+  setNextAutoRefreshAt(new Date(Date.now() + AUTO_REFRESH_INTERVAL_MS));
+}
+
+function setNextAutoRefreshAt(nextRefreshAt) {
+  state.nextAutoRefreshAt = nextRefreshAt;
+
+  if (state.autoRefreshTimerId) {
+    window.clearTimeout(state.autoRefreshTimerId);
+  }
+
+  const delayMs = Math.max(0, nextRefreshAt.getTime() - Date.now());
+  state.autoRefreshTimerId = window.setTimeout(() => {
+    state.autoRefreshTimerId = null;
+
+    if (document.hidden) {
+      return;
+    }
+
+    void loadPrices();
+  }, delayMs);
+}
+
+function shouldRefreshNow() {
+  return !state.nextAutoRefreshAt || Date.now() >= state.nextAutoRefreshAt.getTime();
+}
+
+function getPreferredDateRange(date, forcedDayOffset = null) {
+  const dayOffset = forcedDayOffset ?? (isPastRefreshThreshold(getCopenhagenParts(date)) ? 1 : 0);
+  const startDate = addDays(date, dayOffset);
+  const endDate = addDays(startDate, 1);
+
+  return {
+    dayOffset,
+    start: formatApiDate(startDate),
+    end: formatApiDate(endDate),
+  };
+}
+
+function isPastRefreshThreshold(parts) {
+  return parts.hour > REFRESH_HOUR || (parts.hour === REFRESH_HOUR && parts.minute >= REFRESH_MINUTE);
+}
+
+function getCopenhagenParts(date) {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: COPENHAGEN_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const parts = formatter.formatToParts(date);
+  const values = Object.fromEntries(
+    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]),
+  );
+
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+  };
+}
+
+function getRecordDateKey(date) {
+  const parts = getCopenhagenParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getDisplayedDaySummary(dayKey) {
+  const copy = getDisplayedDayCopy(dayKey);
+  return `Viser priser for ${copy.summary}`;
+}
+
+function getStatusText({ displayedDay, updatedAt }) {
+  const parts = [
+    getDisplayedDaySummary(displayedDay),
+    `Senest opdateret ${formatTimestamp(updatedAt)}`,
+  ];
+  const nextCheckText = getNextRefreshText('Næste automatiske tjek');
+
+  if (nextCheckText) {
+    parts.push(nextCheckText);
+  }
+
+  return parts.join('. ');
+}
+
+function getDisplayedDayCopy(dayKey) {
+  if (!dayKey) {
+    return {
+      heading: 'Dagens',
+      averagePrefix: 'Dagens',
+      summary: 'i dag',
+    };
+  }
+
+  const todayKey = getRecordDateKey(new Date());
+  const tomorrowKey = getRecordDateKey(addDays(new Date(), 1));
+
+  if (dayKey === todayKey) {
+    return {
+      heading: 'Dagens',
+      averagePrefix: 'Dagens',
+      summary: 'i dag',
+    };
+  }
+
+  if (dayKey === tomorrowKey) {
+    return {
+      heading: 'Morgendagens',
+      averagePrefix: 'Morgendagens',
+      summary: 'i morgen',
+    };
+  }
+
+  return {
+    heading: 'Valgte dags',
+    averagePrefix: 'Dagens',
+    summary: formatDayLabel(dayKey),
+  };
+}
+
+function formatDayLabel(dayKey) {
+  const [year, month, day] = dayKey.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function getNextRefreshText(prefix) {
+  if (!state.nextAutoRefreshAt) {
+    return '';
+  }
+
+  return `${prefix} ${formatTimestamp(state.nextAutoRefreshAt)}`;
+}
+
+function getNextReleaseDate(date) {
+  const parts = getCopenhagenParts(date);
+  const nextReleaseLocalDay = isPastRefreshThreshold(parts) ? addDays(date, 1) : date;
+  const releaseParts = getCopenhagenParts(nextReleaseLocalDay);
+  const releaseUtcGuess = new Date(Date.UTC(
+    Number(releaseParts.year),
+    Number(releaseParts.month) - 1,
+    Number(releaseParts.day),
+    REFRESH_HOUR,
+    REFRESH_MINUTE,
+    0,
+    0,
+  ));
+  const correctedOffsetMinutes = getTimeZoneOffsetMinutes(releaseUtcGuess, COPENHAGEN_TIME_ZONE);
+
+  return new Date(releaseUtcGuess.getTime() - correctedOffsetMinutes * 60 * 1000);
+}
+
+function getTimeZoneOffsetMinutes(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]),
+  );
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+
+  return (asUtc - date.getTime()) / 60000;
 }
