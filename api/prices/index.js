@@ -6,7 +6,7 @@ const CACHE_HEADERS = {
 };
 const COPENHAGEN_TIME_ZONE = 'Europe/Copenhagen';
 const NEXT_DAY_REFRESH_HOUR = 0;
-const NEXT_DAY_REFRESH_MINUTE = 5;
+const NEXT_DAY_REFRESH_MINUTE = 1;
 
 let cachedResponse = null;
 

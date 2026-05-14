@@ -6,7 +6,7 @@ const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const VAT_MULTIPLIER = 1.25;
 const COPENHAGEN_TIME_ZONE = 'Europe/Copenhagen';
 const NEXT_DAY_REFRESH_HOUR = 0;
-const NEXT_DAY_REFRESH_MINUTE = 5;
+const NEXT_DAY_REFRESH_MINUTE = 1;
 const AREA_LABELS = {
   DK1: 'Vest',
   DK2: 'Øst',
