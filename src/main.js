@@ -3,6 +3,7 @@ import './style.css';
 const DATASET_URL = '/api/prices';
 const AREAS = ['DK1', 'DK2'];
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const CLOCK_REFRESH_INTERVAL_MS = 60 * 1000;
 const VAT_MULTIPLIER = 1.25;
 const COPENHAGEN_TIME_ZONE = 'Europe/Copenhagen';
 const NEXT_DAY_REFRESH_HOUR = 0;
@@ -87,6 +88,7 @@ const state = {
   apiNextFetchAt: null,
   nextAutoRefreshAt: null,
   autoRefreshTimerId: null,
+  clockRefreshTimerId: null,
 };
 
 const elements = {
@@ -117,15 +119,23 @@ for (const area of AREAS) {
 }
 
 elements.refreshButton.addEventListener('click', () => {
+  refreshCurrentTime();
   void loadPrices();
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && shouldRefreshNow()) {
+  if (document.hidden) {
+    return;
+  }
+
+  refreshCurrentTime();
+
+  if (shouldRefreshNow()) {
     void loadPrices();
   }
 });
 
+startClockRefresh();
 void loadPrices();
 
 async function loadPrices() {
@@ -303,6 +313,26 @@ function render() {
   elements.nextWindow.textContent = nextRecord ? formatWindow(nextRecord.startsAt) : 'Ingen senere intervaller';
   elements.averagePrice.textContent = formatPrice(averagePrice);
   elements.pricesChart.innerHTML = renderChart(selectedRecords, currentRecord, isCurrentDay);
+}
+
+function refreshCurrentTime() {
+  if (state.dataByArea.size === 0) {
+    return;
+  }
+
+  render();
+}
+
+function startClockRefresh() {
+  if (state.clockRefreshTimerId) {
+    window.clearInterval(state.clockRefreshTimerId);
+  }
+
+  state.clockRefreshTimerId = window.setInterval(() => {
+    if (!document.hidden) {
+      refreshCurrentTime();
+    }
+  }, CLOCK_REFRESH_INTERVAL_MS);
 }
 
 function renderError(message) {
